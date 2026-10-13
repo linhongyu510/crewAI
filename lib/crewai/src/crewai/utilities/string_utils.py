@@ -34,8 +34,16 @@ def sanitize_tool_name(name: str, max_length: int = _MAX_TOOL_NAME_LENGTH) -> st
         max_length: Maximum allowed length (default 64 per OpenAI/Bedrock limits).
 
     Returns:
-        Sanitized tool name (lowercase, a-z0-9_ only, max 64 chars).
+        Sanitized tool name (lowercase, a-z0-9_ only, at most max_length chars).
+
+    Raises:
+        ValueError: If max_length is not a positive integer.
     """
+    if max_length <= 0:
+        raise ValueError(
+            f"max_length must be a positive integer, got {max_length}"
+        )
+
     name = unicodedata.normalize("NFKD", name)
     name = name.encode("ascii", "ignore").decode("ascii")
     name = _CAMEL_UPPER_LOWER.sub(r"\1_\2", name)
@@ -47,9 +55,15 @@ def sanitize_tool_name(name: str, max_length: int = _MAX_TOOL_NAME_LENGTH) -> st
     name = name.strip("_")
 
     if len(name) > max_length:
+        # Keep the result within max_length. The readable prefix plus "_" and an
+        # 8-char hash suffix needs 9 chars; when the limit is smaller, fall back
+        # to a short deterministic hash so we never exceed max_length.
         name_hash = hashlib.sha256(name.encode()).hexdigest()[:8]
         suffix = f"_{name_hash}"
-        name = name[: max_length - len(suffix)].rstrip("_") + suffix
+        if max_length < len(suffix):
+            name = hashlib.sha256(name.encode()).hexdigest()[:max_length]
+        else:
+            name = name[: max_length - len(suffix)].rstrip("_") + suffix
 
     return name
 
@@ -80,7 +94,8 @@ def interpolate_only(
     input_string: str | None,
     inputs: dict[str, str | int | float | dict[str, Any] | list[Any]],
 ) -> str:
-    """Interpolate placeholders (e.g., {key}) in a string while leaving JSON untouched.
+    """Interpolate placeholders in a string while leaving JSON untouched.
+
     Only interpolates placeholders that follow the pattern {variable_name} where
     variable_name starts with a letter/underscore and contains only letters, numbers, and underscores.
 
