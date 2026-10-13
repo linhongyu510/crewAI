@@ -1,7 +1,7 @@
 from typing import Any, Dict, List, Union
 
 import pytest
-from crewai.utilities.string_utils import interpolate_only
+from crewai.utilities.string_utils import interpolate_only, sanitize_tool_name
 
 
 class TestInterpolateOnly:
@@ -184,3 +184,50 @@ class TestInterpolateOnly:
             interpolate_only(template, inputs)
 
         assert "inputs dictionary cannot be empty" in str(excinfo.value).lower()
+
+
+import re
+
+
+class TestSanitizeToolName:
+    """Regression tests for sanitize_tool_name truncation (issue #8111)."""
+
+    def test_short_name_is_unchanged(self):
+        assert sanitize_tool_name("fetch_user", max_length=64) == "fetch_user"
+
+    def test_default_long_name_uses_hash_suffix_and_stays_within_64(self):
+        long_name = "fetch_customer_accounts" + "_x" * 80
+        result = sanitize_tool_name(long_name)
+        assert len(result) <= 64
+        assert re.fullmatch(r"[a-z0-9_]+", result)
+        # Readable prefix preserved, then "_" + 8 hex chars.
+        assert re.fullmatch(r"[a-z0-9_]+_[0-9a-f]{8}", result)
+
+    @pytest.mark.parametrize("limit", [1, 2, 4, 8])
+    def test_short_max_length_result_fits_limit(self, limit):
+        result = sanitize_tool_name("fetch_customer_accounts", max_length=limit)
+        assert len(result) == limit
+        assert re.fullmatch(r"[a-z0-9_]+", result)
+
+    def test_max_length_9_and_10_keep_hash_suffix_behavior(self):
+        assert sanitize_tool_name("fetch_customer_accounts", max_length=9) == (
+            "_0453184f"
+        )
+        assert sanitize_tool_name("fetch_customer_accounts", max_length=10) == (
+            "f_0453184f"
+        )
+
+    @pytest.mark.parametrize("bad", [0, -1, -10])
+    def test_non_positive_max_length_raises(self, bad):
+        with pytest.raises(ValueError):
+            sanitize_tool_name("fetch_customer_accounts", max_length=bad)
+
+    def test_result_is_deterministic(self):
+        first = sanitize_tool_name("fetch_customer_accounts", max_length=4)
+        second = sanitize_tool_name("fetch_customer_accounts", max_length=4)
+        assert first == second
+
+    def test_distinct_names_stay_distinct_at_short_limit(self):
+        a = sanitize_tool_name("alpha_tool_name", max_length=6)
+        b = sanitize_tool_name("beta_tool_name", max_length=6)
+        assert a != b
