@@ -5,9 +5,8 @@
 import functools
 import hashlib
 import re
-from typing import Any, Final
 import unicodedata
-
+from typing import Any, Final
 
 _VARIABLE_PATTERN: Final[re.Pattern[str]] = re.compile(r"\{([A-Za-z_][A-Za-z0-9_\-]*)}")
 _QUOTE_PATTERN: Final[re.Pattern[str]] = re.compile(r"[\'\"]+")
@@ -34,8 +33,14 @@ def sanitize_tool_name(name: str, max_length: int = _MAX_TOOL_NAME_LENGTH) -> st
         max_length: Maximum allowed length (default 64 per OpenAI/Bedrock limits).
 
     Returns:
-        Sanitized tool name (lowercase, a-z0-9_ only, max 64 chars).
+        Sanitized tool name (lowercase, a-z0-9_ only, at most max_length chars).
+
+    Raises:
+        ValueError: If max_length is not positive.
     """
+    if max_length <= 0:
+        raise ValueError(f"max_length must be positive, got {max_length}")
+
     name = unicodedata.normalize("NFKD", name)
     name = name.encode("ascii", "ignore").decode("ascii")
     name = _CAMEL_UPPER_LOWER.sub(r"\1_\2", name)
@@ -49,6 +54,8 @@ def sanitize_tool_name(name: str, max_length: int = _MAX_TOOL_NAME_LENGTH) -> st
     if len(name) > max_length:
         name_hash = hashlib.sha256(name.encode()).hexdigest()[:8]
         suffix = f"_{name_hash}"
+        if max_length < len(suffix):
+            return name_hash[:max_length]
         name = name[: max_length - len(suffix)].rstrip("_") + suffix
 
     return name

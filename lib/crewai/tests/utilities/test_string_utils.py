@@ -1,7 +1,44 @@
+import re
 from typing import Any, Dict, List, Union
 
 import pytest
-from crewai.utilities.string_utils import interpolate_only
+from crewai.utilities.string_utils import interpolate_only, sanitize_tool_name
+
+
+class TestSanitizeToolName:
+    """Regression tests for bounded tool-name sanitization."""
+
+    @pytest.mark.parametrize("limit", [1, 2, 4, 8])
+    def test_short_max_length_result_fits_limit(self, limit: int) -> None:
+        result = sanitize_tool_name("fetch_customer_accounts", max_length=limit)
+
+        assert len(result) == limit
+        assert re.fullmatch(r"[a-z0-9_]+", result)
+
+    def test_existing_readable_hash_suffix_behavior_is_preserved(self) -> None:
+        assert sanitize_tool_name("fetch_customer_accounts", max_length=9) == (
+            "_0453184f"
+        )
+        assert sanitize_tool_name("fetch_customer_accounts", max_length=10) == (
+            "f_0453184f"
+        )
+
+    @pytest.mark.parametrize("max_length", [0, -1])
+    def test_non_positive_max_length_is_rejected(self, max_length: int) -> None:
+        with pytest.raises(ValueError, match="max_length must be positive"):
+            sanitize_tool_name("fetch_customer_accounts", max_length=max_length)
+
+    def test_short_hash_is_deterministic_and_distinguishes_names(self) -> None:
+        first = sanitize_tool_name("alpha_tool_name", max_length=6)
+
+        assert first == sanitize_tool_name("alpha_tool_name", max_length=6)
+        assert first != sanitize_tool_name("beta_tool_name", max_length=6)
+
+    def test_short_name_and_default_limit_are_unchanged(self) -> None:
+        assert sanitize_tool_name("fetch_user", max_length=64) == "fetch_user"
+        result = sanitize_tool_name("fetch_customer_accounts" + "_x" * 80)
+        assert len(result) <= 64
+        assert re.fullmatch(r"[a-z0-9_]+_[0-9a-f]{8}", result)
 
 
 class TestInterpolateOnly:
@@ -91,8 +128,7 @@ class TestInterpolateOnly:
     def test_invalid_input_types(self):
         """Test that an error is raised with invalid input types."""
         template = "Hello, {name}!"
-        # Using Any for this test since we're intentionally testing an invalid type
-        inputs: Dict[str, Any] = {"name": object()}  # Object is not a valid input type
+        inputs: Dict[str, Any] = {"name": object()}
 
         with pytest.raises(ValueError) as excinfo:
             interpolate_only(template, inputs)
