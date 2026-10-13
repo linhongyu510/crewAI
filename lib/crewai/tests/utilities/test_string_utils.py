@@ -1,3 +1,4 @@
+import re
 from typing import Any, Dict, List, Union
 
 import pytest
@@ -184,9 +185,6 @@ class TestInterpolateOnly:
             interpolate_only(template, inputs)
 
         assert "inputs dictionary cannot be empty" in str(excinfo.value).lower()
-
-
-import re
 
 
 class TestSanitizeToolName:
